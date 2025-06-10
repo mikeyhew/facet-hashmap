@@ -1,0 +1,8 @@
+[package]
+name = "facet-playground"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+facet = "0.27.12"
+hashbrown = "0.15.4"

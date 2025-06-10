@@ -5,6 +5,9 @@ use hashbrown::HashTable;
 
 use crate::erased::Erased;
 
+#[derive(Clone, Copy)]
+pub(crate) struct ErasedKeyRef<'a>(pub(crate) PtrConst<'a>);
+
 #[repr(transparent)]
 pub struct ErasedKey(pub Erased);
 
@@ -51,6 +54,7 @@ pub struct ErasedHashMap<S> {
 }
 
 impl<S> ErasedHashMap<S> {
+    #[inline(never)]
     pub unsafe fn insert(
         &mut self,
         key: ErasedKey,
@@ -76,6 +80,23 @@ impl<S> ErasedHashMap<S> {
                 None
             }
         }
+    }
+
+    #[inline(never)]
+    pub unsafe fn get<'a>(
+        &'a self,
+        key_ref: ErasedKeyRef<'_>,
+        key_shape: &Shape,
+    ) -> Option<&'a ErasedValue>
+    where
+        S: BuildHasher,
+    {
+        let hash = unsafe { make_hash(&self.hash_builder, key_ref.0, key_shape) };
+        let eq = unsafe { make_eq(key_ref.0, key_shape) };
+
+        let value = self.hash_table.find(hash, eq);
+
+        value.map(|hash_table_entry| &hash_table_entry.value)
     }
 }
 

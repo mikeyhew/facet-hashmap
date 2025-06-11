@@ -6,7 +6,7 @@ use hashbrown::HashTable;
 use crate::erased::Erased;
 
 #[derive(Clone, Copy)]
-pub(crate) struct ErasedKeyRef<'a>(pub(crate) PtrConst<'a>);
+pub struct ErasedKeyRef<'a>(pub(crate) PtrConst<'a>);
 
 #[repr(transparent)]
 pub struct ErasedKey(pub Erased);
@@ -42,7 +42,7 @@ impl std::ops::DerefMut for ErasedValue {
     }
 }
 
-pub struct HashTableEntry {
+struct HashTableEntry {
     pub key: ErasedKey,
     pub value: ErasedValue,
 }

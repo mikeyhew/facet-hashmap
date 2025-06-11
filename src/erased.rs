@@ -7,14 +7,14 @@ type InlineStorage = usize;
 pub union ErasedUninit {
     inline: MaybeUninit<InlineStorage>,
     /// a pointer to the value allocated on the heap
-    boxed: PtrUninit<'static>,
+    boxed_ptr: PtrUninit<'static>,
 }
 
 impl ErasedUninit {
     fn as_ptr<'a>(&mut self, shape: &Shape) -> PtrUninit<'_> {
         match ErasedStorage::for_shape(shape) {
             ErasedStorage::Inline => PtrUninit::new(unsafe { self.inline.as_mut_ptr() }),
-            ErasedStorage::Boxed => unsafe { self.boxed },
+            ErasedStorage::Boxed => unsafe { self.boxed_ptr },
         }
     }
 
@@ -22,7 +22,7 @@ impl ErasedUninit {
     unsafe fn as_const_ptr_assume_init(&self, shape: &Shape) -> PtrConst<'_> {
         match ErasedStorage::for_shape(shape) {
             ErasedStorage::Inline => PtrConst::new(unsafe { self.inline.as_ptr() }),
-            ErasedStorage::Boxed => unsafe { self.boxed.assume_init().as_const() },
+            ErasedStorage::Boxed => unsafe { self.boxed_ptr.assume_init().as_const() },
         }
     }
 
@@ -43,7 +43,7 @@ impl Erased {
             ErasedStorage::Boxed => {
                 let ptr = unsafe { std::alloc::alloc(shape.layout.sized_layout().unwrap()) };
                 ErasedUninit {
-                    boxed: PtrUninit::new(ptr),
+                    boxed_ptr: PtrUninit::new(ptr),
                 }
             }
         }
@@ -61,6 +61,35 @@ impl Erased {
                 ptr.put(value);
             }
             uninit.assume_init()
+        }
+    }
+
+    /// returns a function to drop an erased value with `shape`
+    pub fn drop_fn<'a>(shape: &Shape) -> Option<impl Fn(*mut Erased)> {
+        let drop_in_place = (shape.vtable.drop_in_place)();
+        let layout = shape.layout.sized_layout().unwrap();
+
+        match (ErasedStorage::for_shape(shape), drop_in_place) {
+            (ErasedStorage::Inline, None) => None,
+            (storage, drop_in_place) => Some(
+                #[inline(always)]
+                move |erased_ptr: *mut Erased| unsafe {
+                    match storage {
+                        ErasedStorage::Inline => {
+                            if let Some(drop_in_place) = drop_in_place {
+                                drop_in_place(PtrMut::new(&raw mut (*erased_ptr).0.inline));
+                            }
+                        }
+                        ErasedStorage::Boxed => {
+                            let ptr = (*erased_ptr).0.boxed_ptr;
+                            if let Some(drop_in_place) = drop_in_place {
+                                drop_in_place(ptr.assume_init());
+                            }
+                            std::alloc::dealloc(ptr.as_mut_byte_ptr(), layout)
+                        }
+                    }
+                },
+            ),
         }
     }
 

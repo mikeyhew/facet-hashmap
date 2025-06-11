@@ -98,6 +98,26 @@ impl<S> ErasedHashMap<S> {
 
         value.map(|hash_table_entry| &hash_table_entry.value)
     }
+
+    /// Drops the keys and values in the hash map, which requires the shapes
+    /// and cannot be done in the Drop impl for this struct.
+    /// Safety: `this` is a valid pointer and `key_shape` and `value_shape` are the
+    ///         the correct shapes.
+    pub unsafe fn drop_keys_and_values(this: *mut Self, key_shape: &Shape, value_shape: &Shape) {
+        let drop_key = Erased::drop_fn(key_shape);
+        let drop_value = Erased::drop_fn(value_shape);
+
+        if drop_key.is_some() || drop_value.is_some() {
+            for hash_table_entry in unsafe { (*this).hash_table.iter_mut() } {
+                if let Some(drop_key) = &drop_key {
+                    drop_key(&mut hash_table_entry.key.0);
+                }
+                if let Some(drop_value) = &drop_value {
+                    drop_value(&mut hash_table_entry.value.0);
+                }
+            }
+        }
+    }
 }
 
 unsafe fn make_eq<'a>(
